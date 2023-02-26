@@ -1,0 +1,63 @@
+---
+title: "Report Project 1"
+output: html_document
+date: "2023-02-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Data Description
+The data are snow's diameter collected at EPFL. The data include the binrange of the diameters and the frequency the diameters falling into.
+
+## Exploring data
+First, we explore the distribution of the data. Through the Histogram below, we observe that there are 2 peaks existing in the plots. One exists at about 0.2, while the other peak stays at about0.7. The data are skewed to the right, but understandable as the retained data are always greater than 0. Thus, the log-normal distribution well-fits the positive values of the distributions. In addition, two peaks show that a mixture model will suit the distribution.
+
+In conclusion, a mix-lognormal assumption is appropriate to parameterize the data
+
+
+```{r}
+load(file='lonely.RData')
+hist(lonely, breaks=20, freq=FALSE, main='Histogram of the particles', xlab='retained', xlim=c(0, 2))
+
+```
+
+## Parameters Tune-in
+
+To tune the parameters, including mu1, sigma1 and mu2, sigma2 for the parameters of two lognormal distributions, and tau as the mixture ratio, we will tune parameters to maximize the likelihood. Yet, as we do not observe the data directly, but only the range it belongs to, a sampling procedure is needed.
+
+The data are processed as following:
+
+- In each bin of the data, we sample datapoints uniformly from the bin proportionally to the number of particles retained
+- Perform EM algorithm with respect to the datapoints obtained above
+- Perform one additional parameters optimization, but instead of likelihood, the optimization function is the theoretical probability and the observable frequency of the bins
+
+The idea behind this process is that EM will set up a start for the data fitting, and then the true fitting occurs by minimizing the difference between 2 binned distributions. The log-likelihood of EM after each iteration is displayed below. We can observe that the Maximization works pretty well for the first steps, and then increase by small values up to step 30th. The log-likelihood then withstands another increment before nearly converge. 
+
+```{r}
+load(file='ls.RData')
+plot(ls,xlab='times', ylab='log-likelihood', type='l', main='Log-likelihood convergence by EM')
+```
+
+The final optimization step output the parameters to be:
+
+- mu1: -1.98
+- mu2: -0.43
+- sigma1: 0.48
+- sigma2: 0.31
+- tau: 0.8
+
+The qualification of the tuning is displayed through the Histogram below. We observe that the peaks of the observed data are nearly corresponding to the two peaks of our fitting. The Observed data seems to have flatter tails than our fitted distributions, which we can observe based on the tails themselves, as well as the peaks of the fitted are a bit shifted to the left. Overall, the distribution seems to have a decent fit.
+
+```{r}
+ggg <- seq(from = 0, to = 2, by = 0.01)
+load(file='dense.RData')
+
+hist(lonely, breaks=20, freq=FALSE, main='Histogram of the particles', xlab='retained', xlim=c(0, 2), yaxt='n')
+par(new=TRUE)
+
+plot(ggg,dense, type="l", xlab='', ylab='')
+```
+
+## Paramtric Testing
+Finally, we quantitatively check the result of the fitting using the Chi-square test for two distributions. We assume that the Hypothetical distribution is our fitted distribution, while the data given is the observed bins. We compute the hypothetical probability for each bin, and comparing it to the observed frequency. The observed statistic is about 14.2, much smaller the the threshold of the test for significantly. Thus, our method works well for the dataset.

@@ -1,0 +1,182 @@
+---
+title: "draft"
+output: html_document
+date: "2023-02-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+snow <- read.csv(file = '1_snow_particles.csv')
+head(snow)
+
+
+```
+
+
+
+```{r}
+mid <- (snow$startpoint + snow$endpoint)/2
+retained <- snow$retained....*10
+
+histdf <- data.frame(mid, retained)
+
+lonely <- c()
+
+for (i in c(1:nrow(histdf))){
+  if (histdf$retained[i] != 0){
+    for (j in c(1:histdf$retained[i])){ lonely <- append(lonely, histdf$mid[i])}
+  }
+}
+
+save(lonely, file='lonely.RData')
+hist(lonely, breaks=20, freq=FALSE, main='Histogram of the particles', xlab='retained', xlim=c(0, 2))
+```
+
+Create the vector containing the variables
+```{r}
+
+variables <- c()
+for (i in c(1:nrow(histdf))){
+  if (histdf$retained[i] != 0){
+    for (j in c(1:histdf$retained[i])){ 
+        new <- runif(1, min=snow$startpoint[i], max=snow$endpoint[i])
+        variables <- append(variables, new)
+      }
+  }
+}
+variables <- log(variables)
+
+```
+
+
+```{r}
+dmixnorm <- function(x, mu1, mu2, sigma1, sigma2, tau){
+  y <- (1-tau)*dnorm(x,mu1,sigma1) + tau*dnorm(x,mu2,sigma2)
+  return(y)
+}
+
+```
+
+```{r}
+N <- length(variables)
+
+estimate_p <- function(x, mu1, mu2, sigma1, sigma2, tau){
+  est_f <- (1-tau)*dnorm(x, mu1, sigma1) + tau*dnorm(x, mu2, sigma2)
+  y <- tau*dnorm(x, mu2, sigma2)/est_f
+  return(y)
+}
+
+likelihood <- function(x, mu1, mu2, sigma1, sigma2, tau){
+  like <- log((1-tau)*dnorm(x, mu1, sigma1) + tau*dnorm(x, mu2, sigma2))
+  y <- sum(like)
+  return(y)
+}
+
+expect_likelihood <- function(para, x, para_prev){
+  ps <- estimate_p(x, para_prev[1], para_prev[2], para_prev[3], para_prev[4], para_prev[5])
+  
+  mu1 <- para[1]
+  mu2 <- para[2]
+  sigma1 <- para[3]
+  sigma2 <- para[4]
+  tau <- para[5]
+  
+  A <- log(1-tau)*(N-sum(ps)) + log(tau)*sum(ps)
+  B <- sum( (1-ps) * dnorm(x, mu1, sigma1, log = TRUE) )
+  C <- sum( ps * dnorm(x, mu2, sigma2, log = TRUE) )
+  
+  return(-(A+B+C))
+}
+
+```
+
+```{r}
+mu1_pre <- 3.3
+mu2_pre <- -0.1
+sigma1_pre <- 1
+sigma2_pre <- 2
+tau_pre <- 0.4
+
+ls <- c(likelihood(variables, mu1_pre, mu2_pre, sigma1_pre, sigma2_pre, tau_pre))
+para_prev <- c(mu1_pre, mu2_pre, sigma1_pre, sigma2_pre, tau_pre)
+
+x <- seq(min(variables), max(variables), len = 100)
+
+for(i in seq(1, 50, by=1)){
+  
+  first <- para_prev#c(5, -3, 2, 2, 0.5)
+  optim_best <- optim(first, expect_likelihood, x=variables, para_prev=para_prev)
+  para_prev <- optim_best$par
+    
+  newl <- likelihood(variables, para_prev[1], para_prev[2], para_prev[3], para_prev[4], para_prev[5])
+  ls <- append(ls, newl)
+}
+save(ls, file='ls.RData')
+```
+
+Optimize with respect to the data
+
+```{r}
+realize <- snow$retained..../sum(snow$retained....)
+para <- para_prev
+
+dmixlognorm <- function(x, mu1, mu2, sigma1, sigma2, tau){
+  y <- (1-tau)*dlnorm(x,mu1,sigma1) + tau*dlnorm(x,mu2,sigma2)
+  return(y)
+}
+
+rmixlognorm <- function(x, mu1, mu2, sigma1, sigma2, tau){
+  y <- (1-tau)*rlnorm(x,mu1,sigma1) + tau*rlnorm(x,mu2,sigma2)
+  return(y)
+}
+
+pmixlognorm <- function(x, mu1, mu2, sigma1, sigma2, tau){
+  y <- (1-tau)*plnorm(x,mu1,sigma1) + tau*plnorm(x,mu2,sigma2)
+  return(y)
+}
+
+dif_p <- function(para){
+  low <- pmixlognorm(snow$startpoint, para[1], para[2], para[3], para[4], para[5])
+  high <- pmixlognorm(snow$endpoint, para[1], para[2], para[3], para[4], para[5])
+  middle <- high - low
+  return(sum((middle - realize)**2))
+}
+
+para <- optim(para, dif_p)$par
+
+```
+Test for distribution using t-test
+https://www.scribbr.com/statistics/chi-square-tests/#:~:text=The%20chi%2Dsquare%20goodness%20of,are%20related%20to%20each%20other.
+```{r}
+low <- pmixlognorm(snow$startpoint, para[1], para[2], para[3], para[4], para[5])
+high <- pmixlognorm(snow$endpoint, para[1], para[2], para[3], para[4], para[5])
+middle <- high - low
+
+realize2 <- sum(snow$retained...*10)
+realize <- realize2*realize
+middle <- middle*realize2
+
+stats <- (realize - middle)**2/middle
+
+stats <- sum(stats)
+stats
+
+```
+
+```{r}
+ggg <- seq(from = 0, to = 2, by = 0.01)
+
+dense <- dmixlognorm(ggg, para[1], para[2], para[3], para[4], para[5])
+
+save(dense, file='dense.RData')
+
+hist(lonely, breaks=20, freq=FALSE, main='Histogram of the particles', xlab='retained', xlim=c(0, 2), yaxt='n')
+par(new=TRUE)
+
+plot(ggg,dense, type="l", xlab='', ylab='')
+```
+
